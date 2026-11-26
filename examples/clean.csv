@@ -1,0 +1,6 @@
+unit_id,unit_number,service_type,due_date,due_miles,last_service_date,last_service_miles,odometer,status
+UNIT-201,Truck 201,oil change,2026-12-20,160000,2026-09-01,140000,145000,scheduled
+UNIT-202,Truck 202,brake inspection,2026-12-15,155000,2026-06-01,130000,140000,scheduled
+UNIT-203,Truck 203,tire rotation,2026-12-25,170000,2026-10-01,150000,152000,scheduled
+UNIT-204,Truck 204,dot annual inspection,2027-01-05,,2026-01-05,110000,135000,scheduled
+UNIT-205,Truck 205,oil change,2026-11-01,140000,2026-11-01,145000,146000,completed

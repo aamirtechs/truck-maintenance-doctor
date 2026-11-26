@@ -1,0 +1,17 @@
+unit_id,unit_number,service_type,due_date,due_miles,last_service_date,last_service_miles,odometer,status
+UNIT-001,Truck 101,oil change,2026-12-01,150000,2026-08-01,140000,145000,scheduled
+UNIT-001,Truck 101,brake inspection,2026-11-10,148000,2026-05-10,130000,145000,scheduled
+UNIT-002,Truck 102,oil change,2026-11-20,146000,2026-08-15,138000,145500,scheduled
+UNIT-002,Truck 102,dot annual inspection,2026-10-01,,2025-10-01,120000,145500,scheduled
+UNIT-003,Truck 103,tire rotation,2026-12-15,140000,,,142000,scheduled
+UNIT-003,Truck 103,coolant flush,2026-12-20,160000,2026-06-01,135000,142000,scheduled
+UNIT-004,Truck 104,oil change,2026-11-25,150000,2026-09-01,152000,148000,scheduled
+UNIT-004,Truck 104,transmission service,2026-12-01,155000,2026-07-01,140000,148000,scheduled
+UNIT-005,Truck 105,air filter,soon,150000,2026-08-01,130000,140000,scheduled
+UNIT-005,Truck 105,def system service,2026-12-10,many,2026-08-01,130000,140000,scheduled
+UNIT-001,Truck 101,brake inspection,2027-01-10,160000,2026-05-10,130000,145000,scheduled
+UNIT-007,Truck 107,mystery service,2026-12-05,150000,2026-09-01,140000,143000,scheduled
+UNIT-007,Truck 107,oil change,,,2026-09-01,140000,143000,scheduled
+UNIT-008,Truck 108,lights inspection,2026-11-30,150000,2026-12-01,140000,143000,scheduled
+,Truck 109,oil change,2026-12-01,150000,2026-09-01,140000,143000,scheduled
+UNIT-009,Truck 110,oil change,2026-11-01,140000,2026-07-01,130000,141000,scheduled

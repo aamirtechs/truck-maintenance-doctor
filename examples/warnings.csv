@@ -1,0 +1,4 @@
+unit_id,unit_number,service_type,due_date,due_miles,last_service_date,last_service_miles,odometer,status
+UNIT-301,Truck 301,oil change,2026-11-20,146000,2026-08-15,138000,145500,scheduled
+UNIT-302,Truck 302,mystery service,2026-12-05,150000,2026-09-01,140000,143000,scheduled
+UNIT-303,Truck 303,brake inspection,2026-11-25,160000,2026-09-01,140000,159800,scheduled

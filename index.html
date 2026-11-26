@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Truck Maintenance Doctor - AamirTechs</title>
+<style>
+:root{--navy:#0b1f3a;--gold:#d4a72c;--bg:#f6f8fb;--ink:#1c2733;--muted:#5b6b7c;--line:#d9e1ea}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--navy);color:#fff;padding:28px 20px;border-bottom:4px solid var(--gold)}
+header .wrap{max-width:880px;margin:0 auto}
+header h1{margin:0 0 6px;font-size:1.6rem}
+header p{margin:0;color:#c8d4e4}
+main{max-width:880px;margin:24px auto;padding:0 20px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px;box-shadow:0 1px 3px rgba(11,31,58,.08)}
+label{display:block;font-weight:600;margin:14px 0 6px}
+.card>label:first-child{margin-top:0}
+textarea{width:100%;min-height:180px;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85rem}
+input[type=text],input[type=number],input[type=date],select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:.95rem;width:100%}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:4px}
+.grid label{margin:0 0 6px}
+.row{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+button{background:var(--navy);color:#fff;border:0;border-radius:8px;padding:10px 18px;font-size:.95rem;cursor:pointer}
+button.alt{background:#fff;color:var(--navy);border:1px solid var(--navy)}
+button.gold{background:var(--gold);color:#0b1f3a;font-weight:600}
+pre{background:#0b1f3a;color:#eef3f9;border-radius:8px;padding:16px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;min-height:60px;font-size:.85rem}
+footer{max-width:880px;margin:0 auto 32px;padding:0 20px;color:var(--muted);font-size:.9rem}
+footer a{color:var(--navy)}
+.hint{color:var(--muted);font-size:.85rem;margin-top:6px;font-weight:400}
+.rules{color:var(--muted);font-size:.88rem;line-height:1.55;margin:14px 0 0}
+.rules b{color:var(--ink)}
+</style>
+</head>
+<body>
+<header><div class="wrap"><h1>Truck Maintenance Doctor</h1><p>Audit a fleet maintenance schedule CSV for the mistakes that put a truck out of service: preventive maintenance past its due date, services due soon, services overdue by miles, missing last-service records, and odometer regression.</p></div></header>
+<main><div class="card">
+<label for="file">Input CSV file</label>
+<input type="file" id="file" accept=".csv,text/csv">
+<label for="input">Or paste the CSV data</label>
+<textarea id="input" spellcheck="false" placeholder="Paste a fleet maintenance schedule CSV here, or load the sample."></textarea>
+<label>Options</label>
+<div class="grid">
+<div><label for="opt-days">Due days <span class="hint">flag services due within this many days (CLI --due-days)</span></label><input type="number" id="opt-days" step="1" value="14"></div>
+<div><label for="opt-miles">Due miles <span class="hint">flag services due within this many miles (CLI --due-miles)</span></label><input type="number" id="opt-miles" step="1" value="500"></div>
+<div><label for="opt-asof">As of date <span class="hint">for due and future checks (CLI --as-of)</span></label><input type="date" id="opt-asof"></div>
+</div>
+<div class="row"><button class="gold" id="run" type="button">Run check</button><button class="alt" id="sample" type="button">Load sample</button><button class="alt" id="download" type="button">Download report</button></div>
+<label for="out">Report</label>
+<pre id="out">Your report will appear here.</pre>
+<p class="rules"><b>Errors:</b> overdue-service, overdue-by-miles, missing-last-service, missing-due, duplicate-service, odometer-regression, missing-unit-id, missing-service-type, invalid-date, future-date, invalid-miles, invalid-status. <b>Warnings:</b> service-due-soon, due-by-miles-soon, unknown-service-type, last-service-after-due. A service due exactly at the window edge is flagged, a service due today is due soon rather than overdue, and a completed service is never flagged as overdue or due soon. Mileages are whole numbers and accept thousands separators.</p>
+</div></main>
+<footer>
+<p>Built by AamirTechs. <a href="https://aamirtechs.github.io/">All tools</a> | <a href="https://github.com/aamirtechs/truck-maintenance-doctor">Source</a></p>
+<p>Privacy: this tool runs 100% in your browser, nothing is uploaded.</p>
+</footer>
+<script id="core">
+// Pure logic port of truck_maintenance_doctor.py. No DOM access here.
+// window.runTool(csvText, options) returns the exact CLI text report.
+// options: dueDays (default 14), dueMiles (default 500),
+// asOf ("YYYY-MM-DD" or "" for today).
+var VALID_STATUSES = ["scheduled", "completed", "overdue", "cancelled"];
+var KNOWN_SERVICES = [
+  "oil change", "brake inspection", "tire rotation",
+  "dot annual inspection", "coolant flush", "transmission service",
+  "air filter", "def system service", "lights inspection",
+  "battery check", "alignment"
+];
+var HEADER_ALIASES = {
+  unitid: "unit_id", unit: "unit_id", id: "unit_id",
+  unitnumber: "unit_number", truck: "unit_number", vehicle: "unit_number",
+  servicetype: "service_type", service: "service_type", pmtype: "service_type",
+  duedate: "due_date", nextdue: "due_date", dued: "due_date",
+  duemiles: "due_miles", dueodometer: "due_miles", nextserviceat: "due_miles",
+  lastservicedate: "last_service_date", lastservice: "last_service_date",
+  lastdone: "last_service_date",
+  lastservicemiles: "last_service_miles", lastmiles: "last_service_miles",
+  milesatlastservice: "last_service_miles",
+  odometer: "odometer", miles: "odometer", currentmiles: "odometer",
+  status: "status", servicestatus: "status"
+};
+function pyRepr(v) {
+  if (v === null || v === undefined) return "None";
+  if (v === true) return "True";
+  if (v === false) return "False";
+  if (typeof v === "string") {
+    var esc = v.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t");
+    if (v.indexOf("'") >= 0 && v.indexOf('"') < 0) return '"' + esc + '"';
+    return "'" + esc.replace(/'/g, "\\'") + "'";
+  }
+  return String(v);
+}
+function normaliseHeader(name) {
+  return String(name).trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+// Minimal CSV reader mirroring Python csv.DictReader: quoted fields,
+// doubled quotes, CRLF, blank lines skipped, short rows padded with "",
+// extra fields ignored, UTF-8 BOM handled.
+function parseCsv(text) {
+  var src = String(text == null ? "" : text);
+  if (src.charCodeAt(0) === 0xFEFF) src = src.slice(1);
+  var records = [], record = [], field = "", inQuotes = false, i = 0, n = src.length;
+  var fieldStarted = false;
+  function endField() { record.push(field); field = ""; fieldStarted = false; }
+  function endRecord() { endField(); records.push(record); record = []; }
+  while (i < n) {
+    var ch = src[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (src[i + 1] === '"') { field += '"'; i += 2; }
+        else { inQuotes = false; i += 1; }
+      } else { field += ch; i += 1; }
+    } else if (ch === '"' && !fieldStarted && field === "") {
+      inQuotes = true; fieldStarted = true; i += 1;
+    } else if (ch === ",") {
+      endField(); i += 1;
+    } else if (ch === "\r") {
+      if (src[i + 1] === "\n") i += 1;
+      endRecord(); i += 1;
+    } else if (ch === "\n") {
+      endRecord(); i += 1;
+    } else { field += ch; fieldStarted = true; i += 1; }
+  }
+  if (field !== "" || record.length > 0 || fieldStarted) endRecord();
+  var rows = records.filter(function (r) { return !(r.length === 1 && r[0] === ""); });
+  if (rows.length === 0) return { headers: [], rows: [] };
+  var rawHeaders = rows[0];
+  var mapped = rawHeaders.map(function (h) {
+    var norm = normaliseHeader(h);
+    return HEADER_ALIASES[norm] || norm;
+  });
+  var out = [];
+  for (var r = 1; r < rows.length; r++) {
+    var row = {};
+    for (var c = 0; c < mapped.length; c++) {
+      row[mapped[c]] = c < rows[r].length ? rows[r][c] : "";
+    }
+    out.push(row);
+  }
+  return { headers: mapped, rows: out };
+}
+function parseIntPy(value, field) {
+  // Returns null when blank, throws Error with the Python message
+  // otherwise. Thousands separators are stripped before parsing,
+  // exactly as the Python parse_int does.
+  if (value === null || value === undefined) return null;
+  var text = String(value).trim().replace(/,/g, "");
+  if (!text) return null;
+  if (!/^[+-]?(\d+(_\d+)*)$/.test(text)) {
+    throw new Error(field + " is not a whole number: " + pyRepr(value));
+  }
+  return parseInt(text.replace(/_/g, ""), 10);
+}
+function isLeap(y) { return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0; }
+function daysInMonth(y, m) {
+  return [31, isLeap(y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+}
+// Parse a YYYY-MM-DD date the way datetime.strptime does: returns
+// {y, m, d, iso, dayNum} or null when blank; throws on anything else.
+function parseDatePy(value, field) {
+  if (value === null || value === undefined) return null;
+  var text = String(value).trim();
+  if (!text) return null;
+  var m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(text);
+  var ok = false, y = 0, mo = 0, d = 0;
+  if (m) {
+    y = +m[1]; mo = +m[2]; d = +m[3];
+    ok = mo >= 1 && mo <= 12 && d >= 1 && d <= daysInMonth(y, mo);
+  }
+  if (!ok) throw new Error(field + " is not a YYYY-MM-DD date: " + pyRepr(value));
+  function p2(x) { return (x < 10 ? "0" : "") + x; }
+  return { y: y, m: mo, d: d, iso: m[1] + "-" + p2(mo) + "-" + p2(d),
+           dayNum: Math.round(Date.UTC(y, mo - 1, d) / 86400000) };
+}
+function todayDate() {
+  var now = new Date();
+  function p2(x) { return (x < 10 ? "0" : "") + x; }
+  return { y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate(),
+           iso: now.getFullYear() + "-" + p2(now.getMonth() + 1) + "-" + p2(now.getDate()),
+           dayNum: Math.round(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86400000) };
+}
+function get(row, key) {
+  var v = row[key];
+  return v === null || v === undefined ? "" : String(v);
+}
+function auditRow(row, seenServices, options) {
+  var findings = [];
+  var unit = get(row, "unit_id").trim();
+  var service = get(row, "service_type").trim();
+  var label = unit || "(no unit)";
+  if (service) label = label + " " + service;
+  function add(rule, severity, message) {
+    findings.push({ code: label, rule: rule, severity: severity, message: message });
+  }
+  if (!unit) {
+    add("missing-unit-id", "error", "row has no unit id, so the truck cannot be identified");
+  }
+  if (!service) {
+    add("missing-service-type", "error", "row has no service type, so nobody can tell what is due");
+  } else if (KNOWN_SERVICES.indexOf(service.toLowerCase()) < 0) {
+    add("unknown-service-type", "warning", "service type " + pyRepr(service) +
+        " is not a recognised service, so check the spelling");
+  }
+  if (unit && service) {
+    var key = unit.toLowerCase() + " " + service.toLowerCase();
+    if (seenServices.has(key)) {
+      add("duplicate-service", "error", "unit " + unit + " already has a " + service +
+          " entry, so the schedule conflicts with itself");
+    } else { seenServices.add(key); }
+  }
+  var status = get(row, "status").trim().toLowerCase();
+  if (status && VALID_STATUSES.indexOf(status) < 0) {
+    add("invalid-status", "error", "status " + pyRepr(get(row, "status").trim()) +
+        " is not one of " + VALID_STATUSES.join(", "));
+  }
+  var done = status === "completed";
+  var asOf = options.asOf;
+  var dueDate = null;
+  try { dueDate = parseDatePy(row.due_date, "due date"); }
+  catch (e) { add("invalid-date", "error", e.message); }
+  var lastDate = null;
+  try { lastDate = parseDatePy(row.last_service_date, "last service date"); }
+  catch (e) { add("invalid-date", "error", e.message); }
+  if (lastDate !== null && lastDate.dayNum > asOf.dayNum) {
+    add("future-date", "error", "last service date " + lastDate.iso + " is in the future");
+  }
+  if (lastDate !== null && dueDate !== null && lastDate.dayNum > dueDate.dayNum) {
+    add("last-service-after-due", "warning", "last service " + lastDate.iso +
+        " is after the next due date " + dueDate.iso + ", so the schedule looks stale");
+  }
+  var dueMiles = null;
+  try { dueMiles = parseIntPy(row.due_miles, "due miles"); }
+  catch (e) { add("invalid-miles", "error", e.message); }
+  var lastMiles = null;
+  try { lastMiles = parseIntPy(row.last_service_miles, "last service miles"); }
+  catch (e) { add("invalid-miles", "error", e.message); }
+  var odometer = null;
+  try { odometer = parseIntPy(row.odometer, "odometer"); }
+  catch (e) { add("invalid-miles", "error", e.message); }
+  var mileFields = [[dueMiles, "due miles"], [lastMiles, "last service miles"], [odometer, "odometer"]];
+  mileFields.forEach(function (pair) {
+    if (pair[0] !== null && pair[0] < 0) {
+      add("invalid-miles", "error", pair[1] + " " + pair[0] + " is below zero");
+    }
+  });
+  if (dueDate === null && dueMiles === null) {
+    add("missing-due", "error", "service has no due date and no due miles, so nothing will ever trigger it");
+  }
+  if (lastDate === null && lastMiles === null) {
+    add("missing-last-service", "error", "service has no last service date and no last service miles, so there is no record it was ever done");
+  }
+  if (odometer !== null && lastMiles !== null && odometer < lastMiles) {
+    add("odometer-regression", "error", "odometer " + odometer + " is below the last service miles " +
+        lastMiles + ", so one of the two readings is wrong");
+  }
+  if (!done) {
+    if (dueDate !== null) {
+      var daysOverdue = asOf.dayNum - dueDate.dayNum;
+      if (daysOverdue > 0) {
+        add("overdue-service", "error", "service was due " + dueDate.iso + ", " + daysOverdue + " days ago");
+      } else if (-daysOverdue <= options.dueDays) {
+        add("service-due-soon", "warning", "service is due " + dueDate.iso + ", in " + (-daysOverdue) + " days");
+      }
+    }
+    if (dueMiles !== null && odometer !== null) {
+      var milesOverdue = odometer - dueMiles;
+      if (milesOverdue > 0) {
+        add("overdue-by-miles", "error", "service was due at " + dueMiles + " miles and the odometer reads " +
+            odometer + ", " + milesOverdue + " miles overdue");
+      } else if (-milesOverdue <= options.dueMiles) {
+        add("due-by-miles-soon", "warning", "service is due at " + dueMiles + " miles, " + (-milesOverdue) + " miles away");
+      }
+    }
+  }
+  return findings;
+}
+function padEnd(s, w) { s = String(s); while (s.length < w) s += " "; return s; }
+function plural(n, word) { return n + " " + word + (n !== 1 ? "s" : ""); }
+function formatText(findings, perUnit, summary) {
+  var lines = [];
+  findings.forEach(function (f) {
+    lines.push(f.severity.toUpperCase() + " [" + f.rule + "] " + f.code + ": " + f.message);
+  });
+  lines.push("");
+  lines.push("Units:");
+  perUnit.forEach(function (entry) {
+    var state;
+    if (entry.errors === 0 && entry.warnings === 0) state = "clean";
+    else {
+      var parts = [];
+      if (entry.errors) parts.push(plural(entry.errors, "error"));
+      if (entry.warnings) parts.push(plural(entry.warnings, "warning"));
+      state = parts.join(", ");
+    }
+    lines.push("  " + padEnd(entry.unit_id, 12) + " " + padEnd(entry.unit_number, 12) +
+      " " + entry.services + " services, " + entry.overdue + " overdue, " +
+      entry.due_soon + " due soon: " + state);
+  });
+  lines.push("");
+  lines.push("Services overdue: " + summary.overdue);
+  lines.push("Services due soon: " + summary.due_soon);
+  lines.push("Services overdue by miles: " + summary.overdue_by_miles);
+  lines.push("");
+  lines.push("Services: " + summary.services + ", units: " + summary.units +
+    ", findings: " + summary.findings + ", errors: " + summary.errors +
+    ", warnings: " + summary.warnings);
+  if (summary.errors === 0 && summary.warnings === 0) lines.push("All services clean.");
+  return lines.join("\n") + "\n";
+}
+window.runTool = function (inputText, options) {
+  options = options || {};
+  var asOf = options.asOf ? parseDatePy(options.asOf, "as-of") : todayDate();
+  var opts = {
+    dueDays: (options.dueDays === undefined || options.dueDays === null ||
+              options.dueDays === "") ? 14 : parseInt(options.dueDays, 10),
+    dueMiles: (options.dueMiles === undefined || options.dueMiles === null ||
+               options.dueMiles === "") ? 500 : parseInt(options.dueMiles, 10),
+    asOf: asOf
+  };
+  var parsed = parseCsv(inputText);
+  var rows = parsed.rows;
+  if (rows.length === 0) return "error: no data rows in input\n";
+  if (parsed.headers.indexOf("unit_id") < 0) return "error: no unit id column found in input\n";
+  var findings = [], seenServices = new Set();
+  var units = new Map(), order = [];
+  var overdue = 0, dueSoon = 0, overdueByMiles = 0;
+  rows.forEach(function (row) {
+    var rowFindings = auditRow(row, seenServices, opts);
+    findings = findings.concat(rowFindings);
+    var code = get(row, "unit_id").trim() || "(no unit)";
+    var entry = units.get(code);
+    if (!entry) {
+      entry = { unit_id: code, unit_number: get(row, "unit_number").trim(),
+                services: 0, overdue: 0, due_soon: 0, errors: 0, warnings: 0 };
+      units.set(code, entry); order.push(entry);
+    }
+    entry.services += 1;
+    rowFindings.forEach(function (f) {
+      if (f.severity === "error") entry.errors += 1; else entry.warnings += 1;
+      if (f.rule === "overdue-service" || f.rule === "overdue-by-miles") entry.overdue += 1;
+      if (f.rule === "service-due-soon" || f.rule === "due-by-miles-soon") entry.due_soon += 1;
+    });
+    if (rowFindings.some(function (f) { return f.rule === "overdue-service"; })) overdue += 1;
+    if (rowFindings.some(function (f) {
+      return f.rule === "service-due-soon" || f.rule === "due-by-miles-soon";
+    })) dueSoon += 1;
+    if (rowFindings.some(function (f) { return f.rule === "overdue-by-miles"; })) overdueByMiles += 1;
+  });
+  var errors = findings.filter(function (f) { return f.severity === "error"; }).length;
+  var summary = { services: rows.length, units: order.length, findings: findings.length,
+    errors: errors, warnings: findings.length - errors, overdue: overdue,
+    due_soon: dueSoon, overdue_by_miles: overdueByMiles };
+  return formatText(findings, order, summary);
+};
+</script>
+<script>
+var SAMPLE = `unit_id,unit_number,service_type,due_date,due_miles,last_service_date,last_service_miles,odometer,status
+UNIT-001,Truck 101,oil change,2026-12-01,150000,2026-08-01,140000,145000,scheduled
+UNIT-001,Truck 101,brake inspection,2026-11-10,148000,2026-05-10,130000,145000,scheduled
+UNIT-002,Truck 102,oil change,2026-11-20,146000,2026-08-15,138000,145500,scheduled
+UNIT-002,Truck 102,dot annual inspection,2026-10-01,,2025-10-01,120000,145500,scheduled
+UNIT-003,Truck 103,tire rotation,2026-12-15,140000,,,142000,scheduled
+UNIT-003,Truck 103,coolant flush,2026-12-20,160000,2026-06-01,135000,142000,scheduled
+UNIT-004,Truck 104,oil change,2026-11-25,150000,2026-09-01,152000,148000,scheduled
+UNIT-004,Truck 104,transmission service,2026-12-01,155000,2026-07-01,140000,148000,scheduled
+UNIT-005,Truck 105,air filter,soon,150000,2026-08-01,130000,140000,scheduled
+UNIT-005,Truck 105,def system service,2026-12-10,many,2026-08-01,130000,140000,scheduled
+UNIT-001,Truck 101,brake inspection,2027-01-10,160000,2026-05-10,130000,145000,scheduled
+UNIT-007,Truck 107,mystery service,2026-12-05,150000,2026-09-01,140000,143000,scheduled
+UNIT-007,Truck 107,oil change,,,2026-09-01,140000,143000,scheduled
+UNIT-008,Truck 108,lights inspection,2026-11-30,150000,2026-12-01,140000,143000,scheduled
+,Truck 109,oil change,2026-12-01,150000,2026-09-01,140000,143000,scheduled
+UNIT-009,Truck 110,oil change,2026-11-01,140000,2026-07-01,130000,141000,scheduled
+`;
+var inputEl = document.getElementById("input");
+var outEl = document.getElementById("out");
+var asOfEl = document.getElementById("opt-asof");
+var lastReport = "";
+(function () {
+  var now = new Date();
+  function p2(x) { return (x < 10 ? "0" : "") + x; }
+  asOfEl.value = now.getFullYear() + "-" + p2(now.getMonth() + 1) + "-" + p2(now.getDate());
+})();
+document.getElementById("file").addEventListener("change", function (ev) {
+  var f = ev.target.files && ev.target.files[0];
+  if (!f) return;
+  var reader = new FileReader();
+  reader.onload = function () { inputEl.value = String(reader.result || ""); };
+  reader.readAsText(f);
+});
+document.getElementById("sample").addEventListener("click", function () {
+  inputEl.value = SAMPLE;
+  asOfEl.value = "2026-11-15";
+});
+document.getElementById("run").addEventListener("click", function () {
+  try {
+    lastReport = window.runTool(inputEl.value, {
+      dueDays: document.getElementById("opt-days").value,
+      dueMiles: document.getElementById("opt-miles").value,
+      asOf: asOfEl.value
+    });
+    outEl.textContent = lastReport;
+  } catch (e) {
+    lastReport = "ERROR: " + e.message + "\n";
+    outEl.textContent = lastReport;
+  }
+});
+document.getElementById("download").addEventListener("click", function () {
+  var text = lastReport || outEl.textContent;
+  var blob = new Blob([text], { type: "text/plain" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = "truck-maintenance-report.txt";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
